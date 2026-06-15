@@ -110,6 +110,20 @@ export class JuttuWidget {
 				return;
 			}
 			const pdsUrl = await resolveDid(atUri.did);
+
+			// Reflect an existing session on load. Without this the widget always
+			// rendered "Login" on a fresh page load, even right after signing in,
+			// because currentUser was only ever populated by the in-session popup poll.
+			try {
+				const user = await checkCurrentUser(this.config.apiUrl);
+				if (user) {
+					const profile = await fetchUserProfile(user.handle);
+					this.currentUser = { ...user, ...profile };
+				}
+			} catch {
+				/* not signed in (or session unreadable) — render logged-out */
+			}
+
 			const docRecord = await fetchDocumentRecord(pdsUrl, atUri);
 			if (docRecord?.bskyPostRef?.uri) {
 				this.rootPostUri = docRecord.bskyPostRef.uri;
