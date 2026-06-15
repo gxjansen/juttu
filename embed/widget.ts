@@ -48,7 +48,7 @@ export class JuttuWidget {
 	private currentUser: CurrentUser | null = null;
 	private rootPostUri: string | null = null;
 	private rootPostCid: string | null = null;
-	private sortOrder: SortOption = 'newest';
+	private sortOrder: SortOption = 'most-liked';
 	private pagination: PaginationState = {
 		visibleTopLevel: TOP_LEVEL_PAGE_SIZE,
 		visibleReplies: new Map()
@@ -119,11 +119,18 @@ export class JuttuWidget {
 				this.syncLocalCounts(this.threadData);
 				this.renderWidget();
 			} else {
-				// No bskyPostRef (or no record) — enter document linking flow
+				// No bskyPostRef (or no record) yet. The document linking flow can
+				// only be completed by the repo owner, so showing it to every visitor
+				// is noise. Gate it behind an explicit opt-in hash (#comments-setup);
+				// everyone else sees a graceful empty state.
 				this.documentAtUri = atUri;
 				this.documentRecord = docRecord;
-				this.linkingStep = 'setup';
-				this.renderLinkingUI();
+				if (window.location.hash === '#comments-setup') {
+					this.linkingStep = 'setup';
+					this.renderLinkingUI();
+				} else {
+					this.renderUnlinked();
+				}
 			}
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Unknown error';
@@ -163,9 +170,35 @@ export class JuttuWidget {
 		const wrapper = this.makeRoot();
 		const error = document.createElement('div');
 		error.className = 'juttu-error';
-		error.textContent = `Juttu: ${message}`;
+		error.textContent = message;
 		wrapper.appendChild(error);
 		this.container.appendChild(wrapper);
+	}
+
+	// Graceful state for a document that has no Bluesky post linked yet.
+	// Visitors see this instead of the owner-only linking UI. The owner can
+	// reach the linking flow by appending #comments-setup to the page URL.
+	private renderUnlinked(): void {
+		this.container.innerHTML = '';
+		const root = this.makeRoot();
+
+		const empty = document.createElement('p');
+		empty.className = 'juttu-empty';
+		empty.textContent = 'No comments yet — start the conversation on Bluesky.';
+		root.appendChild(empty);
+
+		const title = this.documentRecord?.title ?? document.title ?? '';
+		const shareText = title ? `${title}\n\n${window.location.href}` : window.location.href;
+		const compose = document.createElement('a');
+		compose.className = 'juttu-discuss-link';
+		compose.href = `https://bsky.app/intent/compose?text=${encodeURIComponent(shareText)}`;
+		compose.target = '_blank';
+		compose.rel = 'noopener noreferrer';
+		compose.textContent = 'Discuss on Bluesky';
+		root.appendChild(compose);
+
+
+		this.container.appendChild(root);
 	}
 
 	private detectTheme(): 'light' | 'dark' {
@@ -195,20 +228,11 @@ export class JuttuWidget {
 		const root = this.makeRoot();
 
 		const topLevelReplies = this.threadData ? getTopLevelReplies(this.threadData) : [];
-		root.appendChild(this.renderHeader(topLevelReplies.length));
+		// No "N Comments" header: it duplicates the page's own "Comments" heading
+		// and only counts top-level replies, not nested ones.
 		root.appendChild(this.renderComposer());
 		root.appendChild(this.renderThread(topLevelReplies));
 
-		const footer = document.createElement('div');
-		footer.className = 'juttu-footer';
-		const poweredBy = document.createElement('a');
-		poweredBy.className = 'juttu-powered-by';
-		poweredBy.href = 'https://juttu.app';
-		poweredBy.target = '_blank';
-		poweredBy.rel = 'noopener noreferrer';
-		poweredBy.textContent = 'Powered by Juttu';
-		footer.appendChild(poweredBy);
-		root.appendChild(footer);
 
 		root.addEventListener('click', (e) => this.handleClick(e));
 		root.addEventListener('input', (e) => {
@@ -370,7 +394,10 @@ export class JuttuWidget {
 		} else {
 			const loginLink = document.createElement('button');
 			loginLink.className = 'juttu-login-link';
-			loginLink.textContent = 'Login to comment';
+			loginLink.innerHTML =
+				'<svg viewBox="0 0 568 501" aria-hidden="true" style="width:16px;height:16px;display:inline-block;vertical-align:-3px;margin-right:6px;flex-shrink:0;fill:currentColor">' +
+				'<path d="M123.121 33.664C188.241 82.553 258.281 181.68 284 234.873c25.719-53.192 95.759-152.32 160.879-201.21C491.866-1.611 568-28.906 568 57.947c0 17.346-9.945 145.713-15.778 166.555-20.275 72.453-94.155 90.933-159.875 79.748C507.222 323.8 536.444 388.56 473.333 453.32c-119.86 122.992-172.272-30.859-185.702-70.281-2.462-7.227-3.614-10.608-3.631-7.733-.017-2.875-1.169.506-3.631 7.733-13.43 39.422-65.842 193.273-185.702 70.281-63.111-64.76-33.89-129.52 80.986-149.071-65.72 11.185-139.6-7.295-159.875-79.748C9.945 203.659 0 75.291 0 57.946 0-28.906 76.135-1.612 123.121 33.664Z"/></svg>' +
+				'Login with your Atmosphere account to comment';
 			area.appendChild(loginLink);
 		}
 
@@ -1361,16 +1388,6 @@ export class JuttuWidget {
 
 		root.addEventListener('click', (e) => this.handleLinkingClick(e));
 
-		const footer = document.createElement('div');
-		footer.className = 'juttu-footer';
-		const poweredBy = document.createElement('a');
-		poweredBy.className = 'juttu-powered-by';
-		poweredBy.href = 'https://juttu.app';
-		poweredBy.target = '_blank';
-		poweredBy.rel = 'noopener noreferrer';
-		poweredBy.textContent = 'Powered by Juttu';
-		footer.appendChild(poweredBy);
-		root.appendChild(footer);
 
 		this.container.appendChild(root);
 	}

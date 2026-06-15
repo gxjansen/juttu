@@ -15,6 +15,14 @@ func (s *Server) PutDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Linking a document is owner-only. Commenter sessions lack the
+	// site.standard.document scope anyway, but guard explicitly so a non-owner
+	// can never write into this collection through the widget.
+	if s.OwnerDID != "" && did.String() != s.OwnerDID {
+		jsonError(w, "only the site owner can link documents", http.StatusForbidden)
+		return
+	}
+
 	var req struct {
 		Rkey   string          `json:"rkey"`
 		Record json.RawMessage `json:"record"`

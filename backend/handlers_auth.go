@@ -1,13 +1,42 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/bluesky-social/indigo/atproto/syntax"
 )
+
+// isOwner reports whether the login identifier resolves to the configured site
+// owner DID. Only the owner is routed through the broad (site.standard.document)
+// OAuth client; everyone else gets the minimal comment scopes. A bare auth-server
+// URL (e.g. https://bsky.social) can't be resolved to a DID, so it's never owner.
+func (s *Server) isOwner(ctx context.Context, identifier string) bool {
+	if s.OwnerDID == "" {
+		return false
+	}
+	id := strings.TrimPrefix(identifier, "@")
+	if strings.HasPrefix(id, "did:") {
+		return id == s.OwnerDID
+	}
+	if strings.HasPrefix(id, "http://") || strings.HasPrefix(id, "https://") {
+		return false
+	}
+	h, err := syntax.ParseHandle(id)
+	if err != nil {
+		return false
+	}
+	ident, err := s.Dir.LookupHandle(ctx, h)
+	if err != nil {
+		return false
+	}
+	return ident.DID.String() == s.OwnerDID
+}
 
 func (s *Server) ClientMetadata(w http.ResponseWriter, r *http.Request) {
 	slog.Info("client metadata request", "url", r.URL, "host", r.Host)
@@ -16,7 +45,7 @@ func (s *Server) ClientMetadata(w http.ResponseWriter, r *http.Request) {
 	if s.OAuth.Config.IsConfidential() {
 		meta.JWKSURI = strPtr(fmt.Sprintf("https://%s/oauth/jwks.json", r.Host))
 	}
-	meta.ClientName = strPtr("bsky-api-service")
+	meta.ClientName = strPtr("gui.do comments")
 	meta.ClientURI = strPtr(fmt.Sprintf("https://%s", r.Host))
 
 	if err := meta.Validate(s.OAuth.Config.ClientID); err != nil {
@@ -58,9 +87,16 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("Login", "client_id", s.OAuth.Config.ClientID, "callback_url", s.OAuth.Config.CallbackURL)
+	// Owner logins go through the broad client (site.standard.document); everyone
+	// else through the minimal one, so commenters aren't asked for linking scope.
+	app := s.OAuthMinimal
+	if app == nil || s.isOwner(ctx, handle) {
+		app = s.OAuth
+	}
 
-	redirectURL, err := s.OAuth.StartAuthFlow(ctx, handle)
+	slog.Info("Login", "client_id", app.Config.ClientID, "owner", app == s.OAuth)
+
+	redirectURL, err := app.StartAuthFlow(ctx, handle)
 	if err != nil {
 		slog.Error("OAuth login failed", "err", err)
 		jsonError(w, fmt.Sprintf("OAuth login failed: %s", err), http.StatusInternalServerError)

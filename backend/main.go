@@ -58,6 +58,11 @@ func main() {
 				Sources: cli.EnvVars("CLIENT_SECRET_KEY_ID"),
 			},
 			&cli.StringFlag{
+				Name:    "owner-did",
+				Usage:   "site owner's DID. Only this account is granted the site.standard.document scope (to link articles in-browser); everyone else gets the minimal comment scopes.",
+				Sources: cli.EnvVars("OWNER_DID"),
+			},
+			&cli.StringFlag{
 				Name:     "redis-url",
 				Usage:    "Redis connection URL",
 				Required: true,
@@ -81,11 +86,28 @@ func main() {
 type Server struct {
 	CookieStore *sessions.CookieStore
 	Dir         identity.Directory
-	OAuth       *oauth.ClientApp
+	// OAuth is the broad client app: its scopes (and the served client metadata)
+	// include site.standard.document, and it handles the OAuth callback. Only the
+	// owner's login is routed through it.
+	OAuth *oauth.ClientApp
+	// OAuthMinimal requests only the comment scopes (post/like/repost). Every
+	// non-owner login uses it, so commenters never see site.standard.document on
+	// the consent screen. Shares client_id, secret, and store with OAuth.
+	OAuthMinimal *oauth.ClientApp
+	// OwnerDID, when set, is the only account granted the broad scope.
+	OwnerDID string
 }
 
 func runServer(ctx context.Context, cmd *cli.Command) error {
-	scopes := []string{
+	bind := ":8080"
+	hostname := cmd.String("hostname")
+	secretKey := cmd.String("client-secret-key")
+	secretKeyID := cmd.String("client-secret-key-id")
+
+	// Minimum scopes a commenter needs to post and interact: create/delete their
+	// own reply, like, and repost records. This is what every non-owner is asked
+	// for on the consent screen.
+	minimalScopes := []string{
 		"atproto",
 		"repo:app.bsky.feed.post?action=create",
 		"repo:app.bsky.feed.post?action=delete",
@@ -93,36 +115,54 @@ func runServer(ctx context.Context, cmd *cli.Command) error {
 		"repo:app.bsky.feed.like?action=delete",
 		"repo:app.bsky.feed.repost?action=create",
 		"repo:app.bsky.feed.repost?action=delete",
+	}
+	// Owner scopes add site.standard.document, needed only to link an article to a
+	// Bluesky post. The served client metadata advertises this union so the broad
+	// request is permitted; only the owner's login actually requests it.
+	ownerScopes := append(append([]string{}, minimalScopes...),
 		"repo:site.standard.document?action=create",
 		"repo:site.standard.document?action=update",
-		"rpc:app.bsky.feed.getPostThread?aud=did:web:api.bsky.app#bsky_appview",
-	}
-	bind := ":8080"
+	)
 
-	var config oauth.ClientConfig
-	hostname := cmd.String("hostname")
+	buildConfig := func(scopes []string) (oauth.ClientConfig, error) {
+		var cfg oauth.ClientConfig
+		if hostname == "" {
+			cfg = oauth.NewLocalhostConfig(
+				fmt.Sprintf("http://127.0.0.1%s/oauth/callback", bind),
+				scopes,
+			)
+		} else {
+			cfg = oauth.NewPublicConfig(
+				fmt.Sprintf("https://%s/oauth-client-metadata.json", hostname),
+				fmt.Sprintf("https://%s/oauth/callback", hostname),
+				scopes,
+			)
+		}
+		if secretKey != "" && hostname != "" {
+			priv, err := atcrypto.ParsePrivateMultibase(secretKey)
+			if err != nil {
+				return cfg, err
+			}
+			if err := cfg.SetClientSecret(priv, secretKeyID); err != nil {
+				return cfg, err
+			}
+		}
+		return cfg, nil
+	}
+
+	// ownerConfig backs the served metadata + callback (broad). minimalConfig is
+	// only used to start commenter auth flows. Same client_id, secret, and store.
+	ownerConfig, err := buildConfig(ownerScopes)
+	if err != nil {
+		return err
+	}
+	minimalConfig, err := buildConfig(minimalScopes)
+	if err != nil {
+		return err
+	}
 	if hostname == "" {
-		config = oauth.NewLocalhostConfig(
-			fmt.Sprintf("http://127.0.0.1%s/oauth/callback", bind),
-			scopes,
-		)
-		slog.Info("configuring localhost OAuth client", "CallbackURL", config.CallbackURL)
-	} else {
-		config = oauth.NewPublicConfig(
-			fmt.Sprintf("https://%s/oauth-client-metadata.json", hostname),
-			fmt.Sprintf("https://%s/oauth/callback", hostname),
-			scopes,
-		)
-	}
-
-	if cmd.String("client-secret-key") != "" && hostname != "" {
-		priv, err := atcrypto.ParsePrivateMultibase(cmd.String("client-secret-key"))
-		if err != nil {
-			return err
-		}
-		if err := config.SetClientSecret(priv, cmd.String("client-secret-key-id")); err != nil {
-			return err
-		}
+		slog.Info("configuring localhost OAuth client", "CallbackURL", ownerConfig.CallbackURL)
+	} else if secretKey != "" {
 		slog.Info("configuring confidential OAuth client")
 	}
 
@@ -137,7 +177,8 @@ func runServer(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer store.Close()
 
-	oauthClient := oauth.NewClientApp(&config, store)
+	oauthClient := oauth.NewClientApp(&ownerConfig, store)
+	minimalClient := oauth.NewClientApp(&minimalConfig, store)
 
 	cookieStore := sessions.NewCookieStore([]byte(cmd.String("session-secret")))
 	if hostname != "" {
@@ -159,9 +200,11 @@ func runServer(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	srv := Server{
-		CookieStore: cookieStore,
-		Dir:         identity.DefaultDirectory(),
-		OAuth:       oauthClient,
+		CookieStore:  cookieStore,
+		Dir:          identity.DefaultDirectory(),
+		OAuth:        oauthClient,
+		OAuthMinimal: minimalClient,
+		OwnerDID:     cmd.String("owner-did"),
 	}
 
 	mux := http.NewServeMux()
