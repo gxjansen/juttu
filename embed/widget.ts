@@ -196,7 +196,7 @@ export class JuttuWidget {
 		compose.rel = 'noopener noreferrer';
 		compose.textContent = 'Discuss on Bluesky';
 		root.appendChild(compose);
-
+		root.appendChild(this.makeSourceLink());
 
 		this.container.appendChild(root);
 	}
@@ -223,6 +223,21 @@ export class JuttuWidget {
 		return root;
 	}
 
+	// AGPL §13: this is a modified network service, so offer users the source.
+	// Deliberately minimal (no product branding), just a muted "source" link.
+	private makeSourceLink(): HTMLElement {
+		const wrap = document.createElement('div');
+		wrap.className = 'juttu-source';
+		const a = document.createElement('a');
+		a.className = 'juttu-source-link';
+		a.href = 'https://github.com/gxjansen/juttu';
+		a.target = '_blank';
+		a.rel = 'noopener noreferrer';
+		a.textContent = 'source';
+		wrap.appendChild(a);
+		return wrap;
+	}
+
 	private renderWidget(): void {
 		this.container.innerHTML = '';
 		const root = this.makeRoot();
@@ -232,6 +247,7 @@ export class JuttuWidget {
 		// and only counts top-level replies, not nested ones.
 		root.appendChild(this.renderComposer());
 		root.appendChild(this.renderThread(topLevelReplies));
+		root.appendChild(this.makeSourceLink());
 
 
 		root.addEventListener('click', (e) => this.handleClick(e));

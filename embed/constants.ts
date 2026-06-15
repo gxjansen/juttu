@@ -240,6 +240,9 @@ a.juttu-handle:hover { text-decoration: underline; }
 .juttu-footer { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--juttu-border-color); text-align: right; }
 .juttu-powered-by { font-size: 0.8125rem; color: var(--juttu-text-muted); text-decoration: none; }
 .juttu-powered-by:hover { text-decoration: underline; }
+.juttu-source { margin-top: 0.75rem; text-align: right; }
+.juttu-source-link { font-size: 0.6875rem; color: var(--juttu-text-muted); text-decoration: none; opacity: 0.55; }
+.juttu-source-link:hover { opacity: 0.9; text-decoration: underline; }
 .juttu-loading { padding: 2rem; text-align: center; color: var(--juttu-text-muted); font-size: 1rem; }
 .juttu-error { padding: 1rem; color: #c0392b; font-size: 1rem; background: #fdf0ee; border-radius: var(--juttu-radius); border: 1px solid #f5c6c0; }
 .juttu-linking { padding: 0.5rem 0; }
