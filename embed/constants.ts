@@ -178,7 +178,7 @@ a.juttu-handle:hover { text-decoration: underline; }
 .juttu-mention, .juttu-link, .juttu-hashtag { color: var(--juttu-link-color); text-decoration: none; }
 .juttu-mention:hover, .juttu-link:hover, .juttu-hashtag:hover { text-decoration: underline; }
 .juttu-comment-images { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.4rem; }
-.juttu-comment-image-link { display: block; overflow: hidden; border-radius: var(--juttu-radius); border: 1px solid var(--juttu-border-color); transition: transform 0.15s; }
+.juttu-comment-image-link { display: block; overflow: hidden; border-radius: var(--juttu-radius); transition: transform 0.15s; }
 .juttu-comment-image-link:hover { transform: scale(1.01); }
 .juttu-comment-image { max-height: 16rem; max-width: 100%; display: block; object-fit: cover; }
 .juttu-comment-gif { max-height: 18rem; width: auto; }
