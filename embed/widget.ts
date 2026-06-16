@@ -1,5 +1,7 @@
 import type {
 	AtUri,
+	BskyEmbed,
+	BskyExternal,
 	BskyPost,
 	CurrentUser,
 	DocumentRecord,
@@ -55,6 +57,10 @@ export class JuttuWidget {
 	};
 	private viewerState: Map<string, ViewerState> = new Map();
 	private localCounts: Map<string, LocalCounts> = new Map();
+	// Replies posted this session that the AppView may not have indexed yet.
+	// Rendered (pinned) until a refetch finds them in the server thread, so a
+	// freshly posted comment shows immediately and survives the refetch.
+	private pendingReplies = new Map<string, { node: ThreadViewPost; parentUri: string }>();
 	private pendingActions: Set<string> = new Set();
 	private openReplyFormUri: string | null = null;
 	private loginPopup: Window | null = null;
@@ -446,8 +452,16 @@ export class JuttuWidget {
 		const thread = document.createElement('div');
 		thread.className = 'juttu-thread';
 
+		// Pinned just-posted comments (not yet indexed by the AppView), shown
+		// first so they're always visible regardless of sort/pagination.
+		const serverUris = new Set(topLevelReplies.map((r) => r.post.uri));
+		const pending = [...this.pendingReplies.values()]
+			.filter((p) => p.parentUri === this.rootPostUri && !serverUris.has(p.node.post.uri))
+			.map((p) => p.node);
+
 		const sorted = sortReplies(topLevelReplies, this.sortOrder);
 		const visible = sorted.slice(0, this.pagination.visibleTopLevel);
+		for (const reply of pending) thread.appendChild(this.renderComment(reply, 0));
 		for (const reply of visible) thread.appendChild(this.renderComment(reply, 0));
 
 		if (sorted.length > this.pagination.visibleTopLevel) {
@@ -461,6 +475,87 @@ export class JuttuWidget {
 			thread.appendChild(loadMore);
 		}
 		return thread;
+	}
+
+	// Render a post's embed: images, external (GIF or link card), or
+	// record-with-media (renders the media part). Returns null for none/unknown.
+	private renderEmbedMedia(embed: BskyEmbed | undefined, bskyPostUrl: string): HTMLElement | null {
+		if (!embed) return null;
+		if (embed.$type === 'app.bsky.embed.images#view' && embed.images?.length) {
+			const images = document.createElement('div');
+			images.className = 'juttu-comment-images';
+			for (const image of embed.images) {
+				const link = document.createElement('a');
+				link.className = 'juttu-comment-image-link';
+				link.href = bskyPostUrl;
+				link.target = '_blank';
+				link.rel = 'noopener noreferrer';
+				const img = document.createElement('img');
+				img.className = 'juttu-comment-image';
+				img.src = image.thumb;
+				img.alt = image.alt || 'Embedded image';
+				img.loading = 'lazy';
+				link.appendChild(img);
+				images.appendChild(link);
+			}
+			return images;
+		}
+		if (embed.$type === 'app.bsky.embed.external#view' && embed.external) {
+			return this.renderExternal(embed.external, bskyPostUrl);
+		}
+		if (embed.$type === 'app.bsky.embed.recordWithMedia#view' && embed.media) {
+			return this.renderEmbedMedia(embed.media, bskyPostUrl);
+		}
+		return null;
+	}
+
+	private renderExternal(ext: BskyExternal, bskyPostUrl: string): HTMLElement {
+		const uri = ext.uri || '';
+		const looksGif = /\.gif($|\?)/i.test(uri) || /(media|c)\.tenor\.com|giphy\.com\/media/i.test(uri);
+		if (looksGif) {
+			const link = document.createElement('a');
+			link.className = 'juttu-comment-image-link';
+			link.href = bskyPostUrl;
+			link.target = '_blank';
+			link.rel = 'noopener noreferrer';
+			const img = document.createElement('img');
+			img.className = 'juttu-comment-image juttu-comment-gif';
+			img.src = uri;
+			img.alt = ext.title || 'GIF';
+			img.loading = 'lazy';
+			link.appendChild(img);
+			return link;
+		}
+		// Link card
+		const card = document.createElement('a');
+		card.className = 'juttu-comment-linkcard';
+		card.href = uri || bskyPostUrl;
+		card.target = '_blank';
+		card.rel = 'noopener noreferrer';
+		if (ext.thumb) {
+			const img = document.createElement('img');
+			img.className = 'juttu-comment-linkcard-thumb';
+			img.src = ext.thumb;
+			img.alt = '';
+			img.loading = 'lazy';
+			card.appendChild(img);
+		}
+		const info = document.createElement('div');
+		info.className = 'juttu-comment-linkcard-info';
+		if (ext.title) {
+			const t = document.createElement('div');
+			t.className = 'juttu-comment-linkcard-title';
+			t.textContent = ext.title;
+			info.appendChild(t);
+		}
+		try {
+			const host = document.createElement('div');
+			host.className = 'juttu-comment-linkcard-host';
+			host.textContent = new URL(uri).hostname.replace(/^www\./, '');
+			info.appendChild(host);
+		} catch { /* ignore unparseable url */ }
+		card.appendChild(info);
+		return card;
 	}
 
 	private renderComment(threadView: ThreadViewPost, depth: number): HTMLElement {
@@ -537,26 +632,9 @@ export class JuttuWidget {
 		body.appendChild(p);
 		comment.appendChild(body);
 
-		// Images
-		if (post.embed?.$type === 'app.bsky.embed.images#view' && post.embed.images?.length) {
-			const images = document.createElement('div');
-			images.className = 'juttu-comment-images';
-			for (const image of post.embed.images) {
-				const link = document.createElement('a');
-				link.className = 'juttu-comment-image-link';
-				link.href = bskyPostUrl;
-				link.target = '_blank';
-				link.rel = 'noopener noreferrer';
-				const img = document.createElement('img');
-				img.className = 'juttu-comment-image';
-				img.src = image.thumb;
-				img.alt = image.alt || 'Embedded image';
-				img.loading = 'lazy';
-				link.appendChild(img);
-				images.appendChild(link);
-			}
-			comment.appendChild(images);
-		}
+		// Embedded media: images, GIFs / link cards (external), and quote-with-media
+		const embedEl = this.renderEmbedMedia(post.embed, bskyPostUrl);
+		if (embedEl) comment.appendChild(embedEl);
 
 		// Actions — use live viewerState, not stale post.viewer
 		const state = this.viewerState.get(post.uri) ?? {};
@@ -619,11 +697,18 @@ export class JuttuWidget {
 		const nestedReplies = (threadView.replies ?? []).filter(
 			(r): r is ThreadViewPost => r.$type === 'app.bsky.feed.defs#threadViewPost'
 		);
-		if (nestedReplies.length > 0) {
+		const nestedServerUris = new Set(nestedReplies.map((r) => r.post.uri));
+		const pendingChildren = [...this.pendingReplies.values()]
+			.filter((p) => p.parentUri === post.uri && !nestedServerUris.has(p.node.post.uri))
+			.map((p) => p.node);
+		if (nestedReplies.length > 0 || pendingChildren.length > 0) {
 			const repliesContainer = document.createElement('div');
 			repliesContainer.className = 'juttu-replies';
 			const visibleCount = this.pagination.visibleReplies.get(post.uri) ?? NESTED_PAGE_SIZE;
 			const sorted = sortReplies(nestedReplies, this.sortOrder);
+			for (const reply of pendingChildren) {
+				repliesContainer.appendChild(this.renderComment(reply, depth + 1));
+			}
 			for (const reply of sorted.slice(0, visibleCount)) {
 				repliesContainer.appendChild(this.renderComment(reply, depth + 1));
 			}
@@ -1025,12 +1110,12 @@ export class JuttuWidget {
 			submitBtn.disabled = true;
 			submitBtn.textContent = 'Post comment';
 
-			// Inject synthetic comment immediately (read-your-own-writes)
-			if (this.threadData && this.currentUser) {
+			// Pin the new comment (read-your-own-writes) until the AppView indexes
+			// it. Kept in pendingReplies so the refetch below can't wipe it and so
+			// it stays visible regardless of sort/pagination.
+			if (this.currentUser && this.rootPostUri) {
 				const synthetic = this.makeSyntheticReply(data.uri, data.cid, text);
-				if (!this.threadData.replies) this.threadData.replies = [];
-				this.threadData.replies.push(synthetic);
-				this.syncLocalCounts(this.threadData);
+				this.pendingReplies.set(data.uri, { node: synthetic, parentUri: this.rootPostUri });
 				this.renderWidget();
 			}
 			setTimeout(() => this.refetchAndRender(), POST_REFETCH_DELAY_MS);
@@ -1080,16 +1165,12 @@ export class JuttuWidget {
 
 			this.closeReplyForm();
 
-			// Inject synthetic reply immediately (read-your-own-writes)
-			if (this.threadData && this.currentUser) {
-				const parentThread = this.findThreadNode(this.threadData, parentUri);
-				if (parentThread) {
-					const synthetic = this.makeSyntheticReply(data.uri, data.cid, text);
-					if (!parentThread.replies) parentThread.replies = [];
-					parentThread.replies.push(synthetic);
-					this.syncLocalCounts(this.threadData);
-					this.renderWidget();
-				}
+			// Pin the new reply under its parent (read-your-own-writes) until the
+			// AppView indexes it; pendingReplies survives the refetch below.
+			if (this.currentUser) {
+				const synthetic = this.makeSyntheticReply(data.uri, data.cid, text);
+				this.pendingReplies.set(data.uri, { node: synthetic, parentUri });
+				this.renderWidget();
 			}
 			setTimeout(() => this.refetchAndRender(), POST_REFETCH_DELAY_MS);
 		} catch (err) {
@@ -1181,6 +1262,12 @@ export class JuttuWidget {
 						now.reposts = prev.reposts;
 					}
 				}
+			}
+
+			// Drop pinned replies the AppView has now indexed, so they render in
+			// their normal sorted position instead of duplicated at the top.
+			for (const uri of [...this.pendingReplies.keys()]) {
+				if (findPostInThread(thread, uri)) this.pendingReplies.delete(uri);
 			}
 
 			this.renderWidget();

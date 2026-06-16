@@ -32,9 +32,18 @@ export interface BskyEmbedImage {
 	alt?: string;
 }
 
+export interface BskyExternal {
+	uri: string;
+	title?: string;
+	description?: string;
+	thumb?: string;
+}
 export interface BskyEmbed {
 	$type: string;
 	images?: BskyEmbedImage[];
+	external?: BskyExternal;
+	// recordWithMedia#view nests the actual media (images/external) under .media
+	media?: BskyEmbed;
 }
 
 export interface BskyPost {

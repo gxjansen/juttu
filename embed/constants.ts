@@ -181,6 +181,12 @@ a.juttu-handle:hover { text-decoration: underline; }
 .juttu-comment-image-link { display: block; overflow: hidden; border-radius: var(--juttu-radius); border: 1px solid var(--juttu-border-color); transition: transform 0.15s; }
 .juttu-comment-image-link:hover { transform: scale(1.01); }
 .juttu-comment-image { max-height: 16rem; max-width: 100%; display: block; object-fit: cover; }
+.juttu-comment-gif { max-height: 18rem; width: auto; }
+.juttu-comment-linkcard { display: flex; align-items: stretch; gap: 0; margin-bottom: 0.4rem; max-width: 100%; border: 1px solid var(--juttu-border-color); border-radius: var(--juttu-radius); overflow: hidden; text-decoration: none; }
+.juttu-comment-linkcard-thumb { width: 5rem; height: 5rem; object-fit: cover; flex-shrink: 0; }
+.juttu-comment-linkcard-info { padding: 0.5rem 0.6rem; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.juttu-comment-linkcard-title { font-size: 0.875rem; font-weight: 600; color: var(--juttu-text); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.juttu-comment-linkcard-host { font-size: 0.75rem; color: var(--juttu-text-muted); margin-top: 0.15rem; }
 .juttu-comment-actions { display: flex; align-items: center; gap: 1rem; font-size: 0.875rem; color: var(--juttu-text-muted); margin-top: 0.4rem; }
 .juttu-like-btn, .juttu-repost-btn, .juttu-reply-btn {
   background: none; border: none; display: flex; align-items: center; gap: 0.3rem;
