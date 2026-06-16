@@ -105,15 +105,21 @@ export const STYLES = `
   display: inline-block;
 }
 .juttu-login-link:hover { opacity: 0.75; }
-.juttu-compose-user { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.juttu-compose-user { display: flex; align-items: stretch; gap: 0.5rem; margin-bottom: 0.5rem; }
 .juttu-compose-avatar {
-  width: var(--juttu-avatar-size);
-  height: var(--juttu-avatar-size);
+  /* Span the full height of the name+handle column: top aligns with the name,
+     bottom with the handle. align-self stretch sets the height; aspect-ratio
+     keeps it a circle. */
+  align-self: stretch;
+  width: auto;
+  height: auto;
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 .juttu-logout-btn {
+  align-self: center;
   background: none;
   border: 1px solid var(--juttu-border-color);
   border-radius: 4px;
