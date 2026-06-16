@@ -105,21 +105,17 @@ export const STYLES = `
   display: inline-block;
 }
 .juttu-login-link:hover { opacity: 0.75; }
-.juttu-compose-user { display: flex; align-items: stretch; gap: 0.5rem; margin-bottom: 0.5rem; }
+.juttu-compose-user { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 .juttu-compose-avatar {
-  /* Span the full height of the name+handle column: top aligns with the name,
-     bottom with the handle. align-self stretch sets the height; aspect-ratio
-     keeps it a circle. */
-  align-self: stretch;
-  width: auto;
-  height: auto;
-  aspect-ratio: 1 / 1;
+  /* ~the height of the name (1rem) + gap + handle (0.875rem) two-line column,
+     so it lines up top-to-name, bottom-to-handle. */
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 .juttu-logout-btn {
-  align-self: center;
   background: none;
   border: 1px solid var(--juttu-border-color);
   border-radius: 4px;
